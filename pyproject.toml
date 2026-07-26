@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "titan-assistant"
+version = "0.1.0"
+description = "TITAN — an autonomous executive assistant with persistent memory, built on the Claude API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["anthropic>=0.120.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+titan = "titan.cli:main"
+
+[tool.setuptools]
+packages = ["titan"]
+
+[tool.setuptools.package-data]
+titan = ["TITAN.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
