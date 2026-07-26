@@ -114,3 +114,102 @@ def test_cli_flags_override_config(capsys):
     out = capsys.readouterr().out
     assert "claude-sonnet-5" in out
     assert "effort          low" in out
+
+
+# ---- API error messages ----------------------------------------------------
+#
+# These are the ordinary first-run failures. A traceback here reads as "the tool
+# is broken" when the fix is usually one step in the console.
+
+
+def _api_error(cls, message, status=400, body=None):
+    import anthropic  # noqa: F401
+    import httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status, request=request, json=body or {})
+    return cls(message, response=response, body=body)
+
+
+def test_out_of_credits_is_explained_not_traced():
+    import anthropic
+
+    exc = _api_error(
+        anthropic.BadRequestError,
+        "Your credit balance is too low to access the Anthropic API.",
+    )
+    msg = cli.explain_api_error(exc)
+    assert "out of credits" in msg
+    assert "key itself is valid" in msg
+    assert "billing" in msg
+
+
+def test_bad_key_is_explained():
+    import anthropic
+
+    msg = cli.explain_api_error(
+        _api_error(anthropic.AuthenticationError, "invalid x-api-key", status=401)
+    )
+    assert "rejected" in msg
+    assert "settings/keys" in msg
+
+
+def test_rate_limit_is_explained():
+    import anthropic
+
+    msg = cli.explain_api_error(
+        _api_error(anthropic.RateLimitError, "slow down", status=429)
+    )
+    assert "Rate limited" in msg
+
+
+def test_unknown_model_is_explained():
+    import anthropic
+
+    msg = cli.explain_api_error(
+        _api_error(anthropic.NotFoundError, "model not found", status=404)
+    )
+    assert "TITAN_MODEL" in msg
+
+
+def test_connection_error_is_explained():
+    import anthropic
+    import httpx
+
+    exc = anthropic.APIConnectionError(
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+    assert "network" in cli.explain_api_error(exc).lower()
+
+
+def test_other_bad_request_passes_the_message_through():
+    import anthropic
+
+    msg = cli.explain_api_error(
+        _api_error(anthropic.BadRequestError, "max_tokens: must be positive")
+    )
+    assert "max_tokens" in msg
+
+
+def test_unexpected_exception_still_produces_a_string():
+    assert "ValueError" in cli.explain_api_error(ValueError("boom"))
+
+
+def test_ask_surfaces_api_error_cleanly(monkeypatch, capsys):
+    import anthropic
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    def boom(self, user_input):
+        raise _api_error(
+            anthropic.BadRequestError,
+            "Your credit balance is too low to access the Anthropic API.",
+        )
+
+    from titan.agent import Agent
+
+    monkeypatch.setattr(Agent, "send", boom)
+
+    # The failure must be a clean message and a non-zero exit, not a traceback.
+    assert cli.main(["ask", "hello"]) == 1
+    assert "out of credits" in capsys.readouterr().err

@@ -34,6 +34,57 @@ def _make_printer(show_tools: bool):
     return on_event
 
 
+def explain_api_error(exc: Exception) -> str:
+    """Turn an SDK exception into something the principal can act on.
+
+    These are the ordinary first-run failures — no credits, bad key, rate limit.
+    A traceback here reads as "the tool is broken" when the fix is usually one
+    step in the console.
+    """
+    import anthropic
+
+    if isinstance(exc, anthropic.AuthenticationError):
+        return (
+            "Your API key was rejected.\n"
+            "Check it at https://console.anthropic.com/settings/keys, then:\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-..."
+        )
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return (
+            "Your API key lacks permission for this model.\n"
+            "Check the key's workspace and model access in the console, or try "
+            "another model:\n  titan --model claude-sonnet-5 ..."
+        )
+    if isinstance(exc, anthropic.NotFoundError):
+        return (
+            "The model was not found. Check TITAN_MODEL — it must be an exact "
+            "model id such as 'claude-opus-5'."
+        )
+    if isinstance(exc, anthropic.RateLimitError):
+        return (
+            "Rate limited. Wait a moment and try again, or lower the effort:\n"
+            "  titan --effort low ..."
+        )
+    if isinstance(exc, anthropic.BadRequestError):
+        blob = str(getattr(exc, "message", "") or exc)
+        if "credit balance" in blob.lower():
+            return (
+                "Your Anthropic account is out of credits — the key itself is "
+                "valid.\n"
+                "Add credits at https://console.anthropic.com/settings/billing "
+                "and try again."
+            )
+        return f"The API rejected the request: {blob}"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Could not reach the API. Check your network connection and retry."
+    if isinstance(exc, anthropic.APIStatusError):
+        status = getattr(exc, "status_code", "?")
+        if isinstance(status, int) and status >= 500:
+            return f"The API returned a server error ({status}). Retry shortly."
+        return f"API error {status}: {getattr(exc, 'message', exc)}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _report(turn: Any) -> None:
     """Print anything the event stream did not already cover."""
     if turn.refused:
@@ -62,7 +113,14 @@ def _build_agent(config: Config, show_tools: bool):
 
 def cmd_ask(args: argparse.Namespace, config: Config) -> int:
     agent = _build_agent(config, args.show_tools)
-    turn = agent.send(" ".join(args.prompt))
+    try:
+        turn = agent.send(" ".join(args.prompt))
+    except KeyboardInterrupt:
+        _stderr("\ninterrupted")
+        return 130
+    except Exception as exc:
+        _stderr(explain_api_error(exc))
+        return 1
     _report(turn)
     if args.usage:
         _stderr(f"\nusage: {agent.usage.summary()}")
@@ -109,7 +167,7 @@ def cmd_repl(args: argparse.Namespace, config: Config) -> int:
             _stderr("\ninterrupted")
             continue
         except Exception as exc:  # keep the REPL alive on transient failures
-            _stderr(f"\nerror: {type(exc).__name__}: {exc}")
+            _stderr(f"\n{explain_api_error(exc)}")
             continue
         _report(turn)
 
