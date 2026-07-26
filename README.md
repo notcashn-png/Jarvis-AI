@@ -11,12 +11,47 @@ every morning and one that gets more useful every week.
 ## Quick start
 
 ```bash
-pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...      # or run `ant auth login`
+./setup.sh
+```
 
-titan doctor                             # verify configuration
+That checks your Python, creates a virtualenv, installs TITAN, runs the tests,
+and scaffolds your memory directory. It is safe to re-run.
+
+Then the one step only you can do — TITAN needs an Anthropic API key:
+
+```bash
+# Create a key at https://console.anthropic.com/settings/keys
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc   # or ~/.bashrc
+source ~/.zshrc
+```
+
+And start it:
+
+```bash
+source .venv/bin/activate
 titan                                    # interactive session
 titan ask "Where is my time going and what should I automate first?"
+```
+
+`titan doctor` prints the resolved configuration and tells you whether your key
+was found.
+
+### First session
+
+Memory starts as three empty stubs. The fastest way to make TITAN useful is to
+spend the first session telling it about you — what you do, what you are trying
+to build, what constraints you have, how you like to be talked to. It writes
+that to `profile.md` and `goals.md` itself, and every later session starts from
+it.
+
+### Manual install
+
+If you would rather not use the script:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+titan init
 ```
 
 ## What it can do
@@ -87,13 +122,14 @@ run at no extra cost after the first request.
 ## Architecture
 
 ```
+setup.sh          one-command install, test, and scaffold
 titan/TITAN.md    the operating spec — system prompt, cached prefix
 titan/config.py   environment-driven configuration
 titan/memory.py   sandboxed file store; _resolve is the security boundary
 titan/tools.py    six memory tools + server-side web tools
 titan/prompt.py   system block assembly, ordered for prompt caching
 titan/agent.py    the tool loop: pause_turn restarts, refusal handling, usage
-titan/cli.py      REPL, one-shot ask, memory inspection, doctor
+titan/cli.py      REPL, one-shot ask, memory inspection, init, doctor
 ```
 
 Two details worth knowing if you extend it:
@@ -114,9 +150,10 @@ pip install -e ".[dev]"
 python -m pytest
 ```
 
-90 tests, no network and no API key required — the agent tests run against a
+106 tests, no network and no API key required — the agent tests run against a
 fake client. The heaviest coverage is on `MemoryStore` path handling, since every
-path it sees comes from model output.
+path it sees comes from model output. CI runs them on Python 3.10 through 3.13
+on every push and pull request.
 
 ## Status
 

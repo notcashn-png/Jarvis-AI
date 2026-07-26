@@ -137,6 +137,31 @@ def cmd_memory(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_init(args: argparse.Namespace, config: Config) -> int:
+    store = MemoryStore(config.memory_root)
+    created = store.scaffold()
+
+    print(f"Memory ready at {store.root}")
+    if created:
+        for path in created:
+            print(f"  created {path}")
+    else:
+        print("  already scaffolded — nothing to do")
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print(
+            "\nNext: set your API key, then start a session.\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "  titan"
+        )
+    else:
+        print(
+            "\nNext: start a session and tell TITAN about yourself so it can "
+            "fill in your profile.\n  titan"
+        )
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace, config: Config) -> int:
     store = MemoryStore(config.memory_root)
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
@@ -201,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("query")
     mem_sub.add_parser("path")
 
+    sub.add_parser("init", help="scaffold the memory directory")
     sub.add_parser("doctor", help="show resolved configuration")
 
     return parser
@@ -228,13 +254,41 @@ def main(argv: list[str] | None = None) -> int:
     if overrides:
         config = replace_config(config, overrides)
 
-    if args.command == "ask":
-        return cmd_ask(args, config)
+    # Commands that never touch the API run regardless of credentials.
     if args.command == "memory":
         return cmd_memory(args, config)
+    if args.command == "init":
+        return cmd_init(args, config)
     if args.command == "doctor":
         return cmd_doctor(args, config)
+
+    if not _has_credentials():
+        _stderr(
+            "No API credentials found. Set a key and try again:\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "Get one at https://console.anthropic.com/settings/keys\n"
+            "(An `ant auth login` profile also works — run `titan doctor` to check.)"
+        )
+        return 2
+
+    if args.command == "ask":
+        return cmd_ask(args, config)
     return cmd_repl(args, config)
+
+
+def _has_credentials() -> bool:
+    """Mirror the SDK's resolution order closely enough to fail helpfully.
+
+    The SDK also accepts an `ant auth login` profile, so an unset env var alone
+    is not proof there are no credentials.
+    """
+    from pathlib import Path
+
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    config_dir = os.environ.get("ANTHROPIC_CONFIG_DIR")
+    base = Path(config_dir) if config_dir else Path.home() / ".config" / "anthropic"
+    return (base / "credentials").is_dir()
 
 
 def replace_config(config: Config, overrides: dict[str, Any]) -> Config:

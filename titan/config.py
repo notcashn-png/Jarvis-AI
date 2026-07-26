@@ -72,9 +72,11 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        home = Path(os.environ.get("TITAN_HOME", "")).expanduser()
-        if not str(home):
-            home = Path.home() / ".titan"
+        # Path("") is PosixPath("."), whose str() is truthy — so test the raw
+        # string, not the Path, or an unset TITAN_HOME silently resolves memory
+        # to the current working directory.
+        raw_home = os.environ.get("TITAN_HOME", "").strip()
+        home = Path(raw_home).expanduser() if raw_home else Path.home() / ".titan"
 
         effort = os.environ.get("TITAN_EFFORT", DEFAULT_EFFORT).strip().lower()
         if effort not in VALID_EFFORTS:

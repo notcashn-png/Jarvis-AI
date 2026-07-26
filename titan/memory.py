@@ -23,6 +23,42 @@ MAX_FILES = 5000
 
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# Starting notes written by `titan init`. Deliberately sparse: TITAN fills these
+# in as it learns, and an over-specified template invites it to invent facts.
+_SCAFFOLD: dict[str, str] = {
+    "profile.md": """# Profile
+
+Who the principal is, their situation, constraints, and how they like to work.
+TITAN maintains this — correct it directly if it gets something wrong.
+
+## Situation
+_Not yet known._
+
+## Constraints
+_Not yet known._
+
+## Working style
+_Not yet known._
+""",
+    "goals.md": """# Goals
+
+Active goals with targets and status. Reviewed at the start of a session.
+
+## Active
+_None recorded yet._
+
+## Someday
+_None recorded yet._
+""",
+    "preferences.md": """# Preferences
+
+How the principal wants TITAN to work. Whenever they correct TITAN's style,
+format, or approach, it gets recorded here so the correction sticks.
+
+- _None recorded yet._
+""",
+}
+
 
 class MemoryError_(Exception):
     """Raised for any rejected memory operation. Surfaced to the model as text."""
@@ -188,6 +224,24 @@ class MemoryStore:
 
     def today_log_path(self) -> str:
         return f"log/{date.today().isoformat()}.md"
+
+    def scaffold(self) -> list[str]:
+        """Seed the starting notes. Existing files are never overwritten.
+
+        A cold empty directory makes the first session worse: TITAN has nowhere
+        to put what it learns and no shape to follow. These stubs give it one.
+        Returns the paths actually created.
+        """
+        created = []
+        for path, body in _SCAFFOLD.items():
+            try:
+                self.read(path)
+                continue  # already there — leave the principal's content alone
+            except MemoryError_:
+                pass
+            self.write(path, body)
+            created.append(path)
+        return created
 
     def overview(self, max_entries: int = 60) -> str:
         """A compact index of memory, injected into the first turn of a session."""

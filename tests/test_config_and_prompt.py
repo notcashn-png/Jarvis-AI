@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from titan.config import DEFAULT_EFFORT, DEFAULT_MAX_TOKENS, DEFAULT_MODEL, Config
@@ -29,6 +31,23 @@ def test_defaults(monkeypatch, tmp_path):
     assert config.max_tokens == DEFAULT_MAX_TOKENS
     assert config.web_enabled is True
     assert config.show_thinking is False
+
+
+def test_unset_home_defaults_to_dot_titan(monkeypatch):
+    # Regression: Path("") is PosixPath("."), which is truthy as a string, so a
+    # naive falsiness check resolved memory to the current working directory.
+    monkeypatch.delenv("TITAN_HOME", raising=False)
+    assert Config.from_env().home == Path.home() / ".titan"
+
+
+def test_blank_home_defaults_to_dot_titan(monkeypatch):
+    monkeypatch.setenv("TITAN_HOME", "   ")
+    assert Config.from_env().home == Path.home() / ".titan"
+
+
+def test_home_expands_tilde(monkeypatch):
+    monkeypatch.setenv("TITAN_HOME", "~/custom-titan")
+    assert Config.from_env().home == Path.home() / "custom-titan"
 
 
 def test_env_overrides(monkeypatch, tmp_path):
